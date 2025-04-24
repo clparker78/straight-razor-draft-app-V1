@@ -57,7 +57,8 @@ def calculate_scores(entries_df, results_df):
         scores.append({
             "name": name,
             "score": total_score,
-            "correct": correct
+            "correct": correct,
+            "current_streak": max_streak
         })
     return sorted(scores, key=lambda x: (-x['score'], -x['correct']))
 
@@ -153,7 +154,7 @@ st.markdown("""
 # ---------- Sidebar Logo----------
 with st.sidebar:
     st.sidebar.subheader("Welcome to the")
-    st.image("Straight_Razor_Draft_2025.jpg", width=300)
+    st.image("Straight_Razor_Draft_2025.jpg", width=240)
 
 # ---------- Sidebar Manual Refresh Button ----------
 with st.sidebar:
@@ -217,21 +218,78 @@ def create_race_image(participants, width=600, height=200):
         x_pos = int(progress_ratio * (width - 50))
         y_pos = int(lane_height * idx + (lane_height / 2) - 20)
         field_bg.paste(head_img, (x_pos, y_pos), mask=head_img.convert("RGBA"))
-
-# Add score next to image
-        draw = ImageDraw.Draw(field_bg)
-        score_text = f"{p['score']} pts"
-        draw.text((x_pos + 45, y_pos + 10), score_text, fill="white")
-
     return field_bg
 
-# Main page race visual
-st.subheader("🏁 Leaderboard")
+# Sidebar mini race
+st.sidebar.subheader("🏁 Leaderboard Race")
 top_runners = leaderboard[:5] if leaderboard else []
-race_image = create_race_image(top_runners, 600, 200)
-st.image(race_image, use_container_width=True)
+race_image = create_race_image(top_runners, 320, 200)
+st.sidebar.image(race_image, use_container_width=True)
+
+# ---------- Goalpost Animation ----------
+
+# Centered goalpost image in the main content area
+col1, col2, col3 = st.columns([1, 2, 1])
+
+with col2:
+    st.image("goalpost.jpg", width=330)
+
+
+
+if 'last_pick_count' not in st.session_state:
+    st.session_state.last_pick_count = 0
+
+team_logos = {team: f"logos/{team}.png" for team in draft_df['Team'].unique()} if not draft_df.empty else {}
+
+current_pick_count = len(draft_df)
+if current_pick_count > st.session_state.last_pick_count:
+    st.session_state.last_pick_count = current_pick_count
+    latest = draft_df.iloc[-1]
+    pick_num = latest['Pick']
+    team_name = latest['Team']
+    team_logo = team_logos.get(team_name, "")
+    anim_class = "ball-animate-double" if team_name == "Chicago Bears" else "ball-animate"
+    js = f"""
+    <script>
+    var ball = document.getElementById('football');
+    var info = document.getElementById('pick-info');
+    if (ball && info) {{
+        ball.className = 'ball-img {anim_class}';
+        info.innerHTML = "Pick {pick_num}: <img src='{team_logo}' class='team-logo' alt='{team_name}'/>";
+        info.style.opacity = 1;
+        setTimeout(function() {{
+            ball.className = 'ball-img';
+            info.style.opacity = 0;
+            info.innerHTML = "";
+        }}, 3000);
+    }}
+    </script>
+    """
+    st.markdown(js, unsafe_allow_html=True)
+
+# ---------- Toast Notification ----------
+if current_pick_count > st.session_state.last_pick_count:
+    toast = random.choice([
+        "🔥 Another pick is in!",
+        "🎯 Draft board just moved.",
+        "🏈 Touchdown! New selection logged.",
+        "📢 The board just got interesting..."
+    ])
+    toast_html = f"<div class='toast'>{toast}</div>"
+    st.empty().markdown(toast_html, unsafe_allow_html=True)
+    st.markdown("""
+    <script>
+    setTimeout(function() {
+        var toast = document.querySelector('.toast');
+        if (toast) { toast.classList.add('hide'); }
+    }, 3000);
+    </script>
+    """, unsafe_allow_html=True)
 
 # ---------- AI Commentary ----------
+st.markdown("### 🎙️ AI Commentary")
+if 'prev_leaderboard' not in st.session_state:
+    st.session_state.prev_leaderboard = leaderboard.copy()
 
 def get_commentary(old_board, new_board):
     comments = []
@@ -267,52 +325,14 @@ if leaderboard:
     st.session_state.prev_leaderboard = leaderboard.copy()
 
 # Full leaderboard
-st.subheader("🏆 The Straight Razor Draft Leaderboard")
+st.subheader("🏆 Leaderboard")
 if leaderboard:
     st.dataframe(pd.DataFrame(leaderboard))
 else:
     st.info("Waiting for picks and entries...")
 
-
-# ---------- Goalpost Animation ----------
-
-# Centered goalpost image in the main content area
-col1, col2, col3 = st.columns([1, 2, 1])
-
-if 'last_pick_count' not in st.session_state:
-    st.session_state.last_pick_count = 0
-
-team_logos = {team: f"logos/{team}.png" for team in draft_df['Team'].unique()} if not draft_df.empty else {}
-
-current_pick_count = len(draft_df)
-if current_pick_count > st.session_state.last_pick_count:
-    st.session_state.last_pick_count = current_pick_count
-    latest = draft_df.iloc[-1]
-    pick_num = latest['Pick']
-    team_name = latest['Team']
-    team_logo = team_logos.get(team_name, "")
-    anim_class = "ball-animate-double" if team_name == "Chicago Bears" else "ball-animate"
-    js = f"""
-    <script>
-    var ball = document.getElementById('football');
-    var info = document.getElementById('pick-info');
-    if (ball && info) {{
-        ball.className = 'ball-img {anim_class}';
-        info.innerHTML = "Pick {pick_num}: <img src='{team_logo}' class='team-logo' alt='{team_name}'/>";
-        info.style.opacity = 1;
-        setTimeout(function() {{
-            ball.className = 'ball-img';
-            info.style.opacity = 0;
-            info.innerHTML = "";
-        }}, 3000);
-    }}
-    </script>
-    """
-    st.markdown(js, unsafe_allow_html=True)
-
-
 # ---------- Draft Picks Table ----------
-st.subheader("📋 First Round NFL Draft Picks")
+st.subheader("📋 First Round Draft Picks")
 
 if not draft_df.empty:
     st.dataframe(
@@ -322,7 +342,6 @@ if not draft_df.empty:
     )
 else:
     st.info("No picks have been entered yet.")
-
 
 # ---------- Footer / Signature (Optional) ----------
 st.markdown("---")
